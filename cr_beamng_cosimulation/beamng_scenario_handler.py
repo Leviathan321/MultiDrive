@@ -140,7 +140,7 @@ def apply_mokey_patch_to_beamng():
                 arg_list.append("-no-tcom-debug")
 
             # Force showing the console
-            arg_list.extend(["-console"])
+            #arg_list.extend(["-console"])
             arg_list.extend(("-tcom-listen-ip", listen_ip))
 
             self._start_beamng(extensions, *arg_list, **opts)
@@ -258,6 +258,8 @@ class BeamNGScenarioHandler():
             if sys.platform == "linux":
                 # Note: We need to listen connection from any IP
                 self.beamng.open(listen_ip='0.0.0.0', launch=True)
+                #self.beamng.open("-headless", "-tcom", listen_ip="0.0.0.0", launch=True)
+                #self.beamng.open(None, "-headless", "-tcom", listen_ip="0.0.0.0", launch=True)
             else:
                 self.beamng.open(launch=True)
 

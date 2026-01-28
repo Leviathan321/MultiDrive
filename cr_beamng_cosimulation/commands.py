@@ -64,7 +64,7 @@ def _load_and_check_scenario(scenario_file: str) -> Tuple[CR_Scenario, CR_Planni
     cr_scenario, cr_planning_problem_set = CR_FileReader(scenario_file).open()
 
     # Currently, we focus only on interacting AVs
-    assert len(cr_scenario.obstacles) == 0, f"We cannot handle scenarios with obstacles. Currently {len(cr_scenario.obstacles)}"
+    #assert len(cr_scenario.obstacles) == 0, f"We cannot handle scenarios with obstacles. Currently {len(cr_scenario.obstacles)}"
 
     # Currently, we can handle only scenarios where AVs start from a stationary position
     for planning_problem in sorted(cr_planning_problem_set.planning_problem_dict.values(), key=lambda pprob: pprob.planning_problem_id):
@@ -138,7 +138,7 @@ def _execute_the_simulation(log_path: str, simulation: CR_Simulation | BNG_Simul
         # Execute the simulation
         simulation.run_simulation()
         # Evaluate the simulation
-        # evaluation = evaluate_simulation(simulation)
+        evaluation = evaluate_simulation(simulation)
     except Exception as e:
         error_traceback = traceback.format_exc()  # This gets the entire error traceback
         with open(os.path.join(log_path, "logs", "log_failures.csv"), 'a', newline='') as f:
@@ -232,7 +232,6 @@ def _store_executed_scenario(output_folder: str, executed_scenario: CR_Scenario,
         None, # planning_problem_set, 
         decimal_precision=20).write_scenario_to_file(output_scenario_file)
 
-
 @click.command()
 @click.pass_context
 @click.option('--scenario-file', type=click.Path(exists=True))
@@ -243,20 +242,16 @@ def simulate(ctx, scenario_file: str, bng_vehicle_model: str):
     """
 
     verbose = ctx.obj["verbose"]
-
     original_scenario, original_planning_problem_set = _load_and_check_scenario(scenario_file)
     
     # scenario_name defines the name of the folder inside logs_path that will contain the results
     scenario_name = ctx.obj["scenario_name"]
-    
     # Default location for storing ALL the simulation results
     output_folder = ctx.obj['output_folder']
     simulation_output_folder = _setup_folders(output_folder, scenario_name)
-
     mod_path = FRENETIX_MODULE_PATH
     config_sim, config_planner = _build_default_configurations(mod_path, output_folder, scenario_name, scenario_file, verbose)
     _update_config_sim_with_beamng_vehicles_data(config_sim, bng_vehicle_model)
-        
     # TODO Is this necessary? Maybe to remember in the output folder that this scenario was simulated?
     config_sim.simulation.cosimulate = False
 
@@ -264,7 +259,6 @@ def simulate(ctx, scenario_file: str, bng_vehicle_model: str):
 
     # Use Base CR Simulation
     simulation = CR_Simulation(config_sim, config_planner)
-    
     # Execute the simulation and return whatever result has to be returned
     simulation, evaluation = _execute_the_simulation(simulation_output_folder, simulation)
 
@@ -277,6 +271,106 @@ def simulate(ctx, scenario_file: str, bng_vehicle_model: str):
 
     # Register in the context where to store information about the execution time
     ctx.obj["execution_time_file"] = os.path.join(output_folder, "simulation_time.txt")
+
+    return simulation, evaluation
+
+# FUNCTION FOR SIMULATING COMMONROAD SCENARIOS - added by berfin
+def simulate_cr(ctx, scenario_file: str, bng_vehicle_model: str):
+    """
+    Simulate the CommonRoad scenario using CommonRoad
+    """
+    verbose = ctx["verbose"]
+    original_scenario, original_planning_problem_set = _load_and_check_scenario(scenario_file)
+    
+    # scenario_name defines the name of the folder inside logs_path that will contain the results
+    scenario_name = ctx["scenario_name"]
+    # Default location for storing ALL the simulation results
+    output_folder = ctx['output_folder']
+    scenario_folder = ctx["scenario_folder"]
+    simulation_output_folder = _setup_folders(output_folder, scenario_name)
+    mod_path = FRENETIX_MODULE_PATH
+    config_sim, config_planner = _build_default_configurations(mod_path, output_folder, scenario_name, scenario_file, verbose)
+    _update_config_sim_with_beamng_vehicles_data(config_sim, bng_vehicle_model)
+    # TODO Is this necessary? Maybe to remember in the output folder that this scenario was simulated?
+    config_sim.simulation.cosimulate = False
+
+    config_sim.visualization.save_plots = verbose
+
+    # Use Base CR Simulation
+    simulation = CR_Simulation(config_sim, config_planner)
+    # Execute the simulation and return whatever result has to be returned
+    simulation, evaluation = _execute_the_simulation(simulation_output_folder, simulation)
+    executed_scenario = simulation.scenario
+
+    # Copy all the configurations and the input scenarios into the output folder
+    _store_configurations(scenario_folder, config_sim, config_planner)
+    _store_scenario(scenario_folder, original_scenario, original_planning_problem_set, file_name="scenario_to_simulate.xml")
+    _store_executed_scenario(scenario_folder, executed_scenario, file_name="simulated_scenario.xml")
+
+    # Register in the context where to store information about the execution time
+    ctx["execution_time_file"] = os.path.join(scenario_folder, "simulation_time.txt")
+
+    return simulation, evaluation
+
+# FUNCTION FOR SIMULATING BEAMNG SCENARIOS - added by berfin
+def simulate_with_beamng(ctx, scenario_file: str, bng_vehicle_model:str):
+    """
+    Simulate the CommonRoad scenario using BeamNG.tech and its native controller ScritpAI
+    """
+
+    verbose = ctx["verbose"]
+
+    original_scenario, original_planning_problem_set = _load_and_check_scenario(scenario_file)
+
+    scenario_name = ctx["scenario_name"]
+    
+    # Default location for storing ALL the simulation results
+    output_folder = ctx['output_folder']
+    scenario_folder = ctx["scenario_folder"]
+    simulation_output_folder = _setup_folders(output_folder, scenario_name)
+
+    # Location where the Frenetix configurations are stored
+    mod_path = FRENETIX_MODULE_PATH
+    config_sim, config_planner = _build_default_configurations(mod_path, output_folder, scenario_name, scenario_file, verbose)
+    _update_config_sim_with_beamng_vehicles_data(config_sim, bng_vehicle_model)
+
+    goal_check = ctx.get("goal_check", None)
+    if goal_check is not None:
+        # attach to simulation config so BeamNGSimulation can read it
+        setattr(config_sim.simulation, "goal_check", goal_check)
+        # optionally also ego id
+        setattr(config_sim.simulation, "ego_id", int(goal_check.get("ego_id", 3001)))
+
+    # TODO Is this necessary? Maybe to remember in the output folder that this scenario was co-simulated?
+    config_sim.simulation.cosimulate = True
+    config_sim.simulation.cosimulate_with = "scriptai"
+    config_sim.visualization.save_plots = verbose
+    #
+    # NOTE: With parallel execution there's an issue with propagating the agent states to "remote" agents,  
+    #   so we forcefully use the sequential simulation here.
+    config_sim.simulation.multiprocessing = False
+    # Force replanning at each cycle if needed
+    # config_planner.planning.replanning_frequency = 1
+
+    # Load the additional (default) configurations from the beamng.ini file
+    # TODO Consider adding beamng configuration overrides
+    beamng_config = get_beamng_configuration()
+
+    # Since we are co-simulating CommonRoad scenarios using BeamNG we need a different simulation class
+    simulation = BNG_Simulation(config_sim, config_planner, beamng_config)
+
+    # Execute the simulation and return whatever result has to be returned
+    simulation, evaluation = _execute_the_simulation(simulation_output_folder, simulation)
+
+    executed_scenario = simulation.scenario
+
+    # Copy all the configurations and the input scenarios into the output folder
+    _store_configurations(scenario_folder, config_sim, config_planner)
+    _store_scenario(scenario_folder, original_scenario, original_planning_problem_set, file_name="scenario_to_cosimulate_with_bng.xml")
+    _store_executed_scenario(scenario_folder, executed_scenario, file_name="cosimulated_scenario_with_bng.xml")
+
+    # Register in the context where to store information about the execution time
+    ctx["execution_time_file"] = os.path.join(output_folder, "cosimulation_with_bng_time.txt")
 
     return simulation, evaluation
 

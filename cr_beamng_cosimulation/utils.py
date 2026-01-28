@@ -27,7 +27,6 @@ FRENETIX_MODULE_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.absp
 LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "executed-simulations")
 
 
-
 def get_configuration_dict():
     # https://stackoverflow.com/questions/8884188/how-to-read-and-write-ini-file-with-python3
     try:

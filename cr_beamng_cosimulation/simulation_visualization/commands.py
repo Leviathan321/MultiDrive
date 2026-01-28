@@ -114,14 +114,20 @@ def visualize_the_scenario(scenario: Scenario, planning_problem_set: PlanningPro
 
             # Show goal areas (until the vehicle is there)
             # Set Goal area parameters
-            planning_problem = planning_problem_set.planning_problem_dict[obstacle.obstacle_id]
-            goal_region = planning_problem.goal
+            # planning_problem = planning_problem_set.planning_problem_dict[obstacle.obstacle_id]
+            # goal_region = planning_problem.goal
 
-            goal_region_params = MPDrawParams()
-            goal_region_params.goal_region.shape.facecolor = color_mapping[obstacle.obstacle_id]
-            goal_region_params.goal_region.shape.opacity = 0.5
+            # goal_region_params = MPDrawParams()
+            # goal_region_params.goal_region.shape.facecolor = color_mapping[obstacle.obstacle_id]
+            # goal_region_params.goal_region.shape.opacity = 0.5
 
-            goal_region.draw(rnd, draw_params=goal_region_params)
+            # goal_region.draw(rnd, draw_params=goal_region_params)
+    pp_id = 3001
+    if pp_id in planning_problem_set.planning_problem_dict:
+        planning_problem = planning_problem_set.planning_problem_dict[pp_id]
+        goal_region = planning_problem.goal
+        goal_region_params = MPDrawParams()
+        goal_region.draw(rnd, draw_params=goal_region_params)
 
     # Render the scenario onto the plot
     rnd.render()
@@ -144,6 +150,65 @@ def visualize_the_scenario(scenario: Scenario, planning_problem_set: PlanningPro
     plt.close()
 
 import numpy as np
+
+def plot_simulation_frames(ctx, original_scenario_file: str, executed_scenario_file: str, label:str, start_from: Optional[int], end_at: Optional[int], size_inch: int, format: str): #, selected_vehicles: Optional[List[int]]):
+    """
+    Plot all the frames of the executed scenario
+    """
+    # Extract the options from ctx
+    output_folder = ctx["scenario_folder"] + "/plots"
+    os.makedirs(output_folder, exist_ok=True)
+
+    verbose = ctx["verbose"]
+    
+    # Executed scenario should only have obstacles that correspond to the monitored behavior of vehicles during the simulation
+    original_scenario, planning_problem_set = XMLFileReader(original_scenario_file).open(lanelet_assignment=True)
+    executed_scenario, _ = XMLFileReader(executed_scenario_file).open(lanelet_assignment=True)
+
+    first_time_step = min([o.initial_state.time_step for o in executed_scenario.obstacles])
+    print(f"First time step: {first_time_step}, for obstacles: {[o.obstacle_id for o in executed_scenario.obstacles]}")
+    last_time_step = max([ max([s.time_step for s in o.prediction.trajectory.state_list]) for o in executed_scenario.obstacles])
+    print(f"Last time step: {last_time_step}, for obstacles: {[o.obstacle_id for o in executed_scenario.obstacles]}")
+
+    # Set intervals
+    initial_time_step = first_time_step if start_from is None else start_from
+    # We cannot start before the first timestep?
+    assert first_time_step <= initial_time_step, "We cannot plot starting before the scenario starts"
+
+    final_time_step = last_time_step if end_at is None else end_at
+    assert last_time_step >= final_time_step, "We cannot plot after the scenario ends"
+
+    manager = enlighten.Manager()
+    frame_pbar = manager.counter(desc='Generated Frames', total=(final_time_step-initial_time_step))
+
+    if verbose:
+        click.echo(f"Plotting scenario {executed_scenario_file} between {initial_time_step} and {final_time_step}")
+        click.echo(f"Plots will be stored at {output_folder}")
+
+    # Compute the limits once for all
+
+    min_x, min_y = float('inf'), float('inf')
+    max_x, max_y = float('-inf'), float('-inf')
+    
+    for lanelet in original_scenario.lanelet_network.lanelets:
+        for vertices in [lanelet.left_vertices, lanelet.center_vertices, lanelet.right_vertices]:
+            min_x_val_vertices, max_x_val_vertices = np.min(vertices[:,0]), np.max(vertices[:,0])
+            min_y_val_vertices, max_y_val_vertices = np.min(vertices[:,1]), np.max(vertices[:,1])
+
+            min_x = min([min_x, min_x_val_vertices])
+            max_x = max([max_x, max_x_val_vertices])
+            min_y = min([min_y, min_y_val_vertices])
+            max_y = max([max_y, max_y_val_vertices])
+
+    margin = 20
+
+    x_lim = (min_x - margin, max_x + margin)
+    y_lim = (min_y - margin, max_y + margin)
+
+    # For each agent, compute the metrics
+    for time_step in frame_pbar(range(initial_time_step, final_time_step+1)):
+        visualize_the_scenario(executed_scenario, planning_problem_set, output_folder, time_step, last_time_step, size_inch, format, x_lim, y_lim,
+                               label=label)
 
 # focus the plotting on a specific vehicle (or replot for a specific vehicle)
 @click.command()
@@ -213,10 +278,94 @@ def plot_simulation(ctx, original_scenario_file: str, executed_scenario_file: st
                                label=label)
 
 
+def plot_simulate(ctx, original_scenario_file: str, executed_scenario_file: str, label:str, start_from: Optional[int], end_at: Optional[int], size_inch: int, format: str): #, selected_vehicles: Optional[List[int]]):
+    """
+    Plot all the frames of the executed scenario
+    """
+    # Extract the options from ctx
+    output_folder = os.path.join(ctx["scenario_folder"], "plots")
+    os.makedirs(output_folder, exist_ok=True)
+
+    verbose = ctx["verbose"]
+    
+    # Executed scenario should only have obstacles that correspond to the monitored behavior of vehicles during the simulation
+    original_scenario, planning_problem_set = XMLFileReader(original_scenario_file).open(lanelet_assignment=True)
+    executed_scenario, _ = XMLFileReader(executed_scenario_file).open(lanelet_assignment=True)
+
+    first_time_step = min([o.initial_state.time_step for o in executed_scenario.obstacles])
+    pp_id = 3001
+    ego = next((o for o in executed_scenario.obstacles if o.obstacle_id == pp_id), None)
+    last_time_step = max(s.time_step for s in ego.prediction.trajectory.state_list)
+    # first_time_step = min([o.initial_state.time_step for o in executed_scenario.obstacles])
+    # last_time_step = max([ max([s.time_step for s in o.prediction.trajectory.state_list]) for o in executed_scenario.obstacles])
+    # Set intervals
+    initial_time_step = first_time_step if start_from is None else start_from
+    # We cannot start before the first timestep?
+    assert first_time_step <= initial_time_step, "We cannot plot starting before the scenario starts"
+
+    final_time_step = last_time_step if end_at is None else end_at
+    assert last_time_step >= final_time_step, "We cannot plot after the scenario ends"
+
+    manager = enlighten.Manager()
+    frame_pbar = manager.counter(desc='Generated Frames', total=(final_time_step-initial_time_step))
+
+    if verbose:
+        click.echo(f"Plotting scenario {executed_scenario_file} between {initial_time_step} and {final_time_step}")
+        click.echo(f"Plots will be stored at {output_folder}")
+
+    # Compute the limits once for all
+
+    min_x, min_y = float('inf'), float('inf')
+    max_x, max_y = float('-inf'), float('-inf')
+    
+    for lanelet in original_scenario.lanelet_network.lanelets:
+        for vertices in [lanelet.left_vertices, lanelet.center_vertices, lanelet.right_vertices]:
+            min_x_val_vertices, max_x_val_vertices = np.min(vertices[:,0]), np.max(vertices[:,0])
+            min_y_val_vertices, max_y_val_vertices = np.min(vertices[:,1]), np.max(vertices[:,1])
+
+            min_x = min([min_x, min_x_val_vertices])
+            max_x = max([max_x, max_x_val_vertices])
+            min_y = min([min_y, min_y_val_vertices])
+            max_y = max([max_y, max_y_val_vertices])
+
+    margin = 5
+
+    x_lim = (min_x - margin, max_x + margin)
+    y_lim = (min_y - margin, max_y + margin)
+
+    # For each agent, compute the metrics
+    for time_step in frame_pbar(range(initial_time_step, final_time_step+1)):
+        visualize_the_scenario(executed_scenario, planning_problem_set, output_folder, time_step, last_time_step, size_inch, format, x_lim, y_lim,
+                               label=label)
+
+
+
 def _is_tool(name):
     """Check whether name is on PATH and marked as executable."""
     from shutil import which
     return which(name) is not None
+
+
+def animate_simulate(ctx, plots_folder: str):
+    """
+    Combine the frames into an high-quality gif
+    """
+    # Extract the options from ctx
+    output_folder = ctx["scenario_folder"]
+    os.makedirs(output_folder, exist_ok=True)
+    
+    verbose = ctx["verbose"]
+
+    assert _is_tool("gifski"), "Gifski is not available on the PATH. Install and add it to the path"
+    
+    # Single process
+    # gifski -o simulation_1741866740.gif simulation_1741866740/tranches/00000/logs/plots/*.png
+    default_name = "simulation.gif"
+    output_file = os.path.join(output_folder, default_name)
+
+    exit_code = subprocess.check_call(f"gifski -o {output_file} {plots_folder}/*.png", shell=True)
+    
+    assert exit_code == 0, "Something went wrong while generating the gif"
 
 @click.command()
 @click.pass_context
@@ -241,5 +390,3 @@ def animate_simulation(ctx, plots_folder: str):
     exit_code = subprocess.check_call(f"gifski -o {output_file} {plots_folder}/*.png", shell=True)
     
     assert exit_code == 0, "Something went wrong while generating the gif"
-
-
