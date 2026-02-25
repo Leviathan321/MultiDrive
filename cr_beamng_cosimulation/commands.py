@@ -160,7 +160,6 @@ def _execute_the_simulation(log_path: str, simulation: CR_Simulation | BNG_Simul
                             "Error time: " + str(current_time) + " ; " +
                             "In Scenario Timestep: " + current_timestep + " ; " +
                             "CODE ERROR: " + str(e) + error_traceback + "\n\n\n\n"])
-        raise Exception
     finally:
         try:
             # close sim_logger

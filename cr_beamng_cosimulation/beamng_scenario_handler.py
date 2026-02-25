@@ -386,10 +386,10 @@ class BeamNGScenarioHandler():
 
             # Render at the bottom (priority 10)
             # TODO We assume those materials exist.
-            beamng_road = BNG_Road('road_asphalt_light', interpolate=False,
-                                     rid=f"lane_{lanelet.lanelet_id}",
-                                     over_objects=True,
-                                     drivability=-1, render_priority=10)
+            # beamng_road = BNG_Road('road_asphalt_light', interpolate=False,
+            #                          rid=f"lane_{lanelet.lanelet_id}",
+            #                          over_objects=True,
+            #                          drivability=-1, render_priority=10)
 
             # Create also the invisible lane on top of it, this is the actual road the NAVI sees
             # Render at the top (priority 5)
@@ -398,10 +398,10 @@ class BeamNGScenarioHandler():
                                                over_objects=True,
                                                drivability=1, render_priority=1)
 
-            beamng_road.add_nodes(*road_nodes)
+            # beamng_road.add_nodes(*road_nodes)
             invisible_beamng_road.add_nodes(*road_nodes)
 
-            beamng_scenario.add_road(beamng_road)
+            # beamng_scenario.add_road(beamng_road)
             beamng_scenario.add_road(invisible_beamng_road)
         
         # Generate additional details, such as lanemarking
