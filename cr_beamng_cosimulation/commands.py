@@ -3,6 +3,7 @@ import os
 import traceback
 import csv
 import pickle
+import shutil
 
 import cr_scenario_handler.utils.multiagent_helpers as hf
 
@@ -81,11 +82,20 @@ def _setup_folders(logs_path: str, scenario_name: str) -> str:
 
     # Here's where we store the logs for THIS execution
     log_path = os.path.join(logs_path, scenario_name)
-    # Fail if already executed?
+    # # Fail if already executed?
+    # os.makedirs(log_path, exist_ok=False)
+    # # This is the "logs" folder inside the simulation folder ... I expected it was already there...
+    # os.makedirs(os.path.join(log_path, "logs"), exist_ok=False)
+   
+    # Remove folder if it already exists
+    if os.path.exists(log_path):
+        shutil.rmtree(log_path)
+
+    # Recreate base directory
     os.makedirs(log_path, exist_ok=False)
-    # This is the "logs" folder inside the simulation folder ... I expected it was already there...
+
+    # Create "logs" subdirectory
     os.makedirs(os.path.join(log_path, "logs"), exist_ok=False)
-    
     return log_path
 
 
@@ -157,6 +167,7 @@ def _execute_the_simulation(log_path: str, simulation: CR_Simulation | BNG_Simul
             simulation.sim_logger.con.close()
             # close child processes
             simulation.close_processes()
+            raise Exception
         except:
             pass
 
@@ -363,12 +374,21 @@ def simulate_with_beamng(ctx, scenario_file: str, bng_vehicle_model:str):
     simulation, evaluation = _execute_the_simulation(simulation_output_folder, simulation)
 
     executed_scenario = simulation.scenario
+    import time
+
+    start_time = time.perf_counter()  # Start high-precision timer
 
     # Copy all the configurations and the input scenarios into the output folder
     _store_configurations(scenario_folder, config_sim, config_planner)
-    _store_scenario(scenario_folder, original_scenario, original_planning_problem_set, file_name="scenario_to_cosimulate_with_bng.xml")
-    _store_executed_scenario(scenario_folder, executed_scenario, file_name="cosimulated_scenario_with_bng.xml")
+    _store_scenario(scenario_folder, original_scenario, original_planning_problem_set, 
+                    file_name="scenario_to_cosimulate_with_bng.xml")
+    _store_executed_scenario(scenario_folder, executed_scenario, 
+                            file_name="cosimulated_scenario_with_bng.xml")
 
+    end_time = time.perf_counter()  # End timer
+    elapsed_time = end_time - start_time
+    print(f"Time taken for storing scenarios and configurations: {elapsed_time:.6f} seconds")
+    
     # Register in the context where to store information about the execution time
     ctx["execution_time_file"] = os.path.join(output_folder, "cosimulation_with_bng_time.txt")
 
@@ -421,11 +441,20 @@ def cosimulate_with_beamng(ctx, scenario_file: str, bng_vehicle_model:str):
 
     executed_scenario = simulation.scenario
 
+    import time
+    start_time = time.time()  # Start timer
+
     # Copy all the configurations and the input scenarios into the output folder
     _store_configurations(output_folder, config_sim, config_planner)
-    _store_scenario(output_folder, original_scenario, original_planning_problem_set, file_name="scenario_to_cosimulate_with_bng.xml")
-    _store_executed_scenario(output_folder, executed_scenario, file_name="cosimulated_scenario_with_bng.xml")
+    _store_scenario(output_folder, original_scenario, original_planning_problem_set, 
+                    file_name="scenario_to_cosimulate_with_bng.xml")
+    _store_executed_scenario(output_folder, executed_scenario, 
+                            file_name="cosimulated_scenario_with_bng.xml")
 
+    end_time = time.time()  # End timer
+    elapsed_time = end_time - start_time
+    print(f"Time taken for storing scenarios and configurations: {elapsed_time:.4f} seconds")
+    
     # Register in the context where to store information about the execution time
     ctx.obj["execution_time_file"] = os.path.join(output_folder, "cosimulation_with_bng_time.txt")
 

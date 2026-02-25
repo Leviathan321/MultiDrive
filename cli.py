@@ -1,9 +1,12 @@
 # This file is organized following the example described here: https://stackoverflow.com/questions/34643620/how-can-i-split-my-click-commands-each-with-a-set-of-sub-commands-into-multipl
-
 import click
+
+import sys
+sys.path.insert(0,"./Frenetix-Motion-Planner/")
 
 from cr_beamng_cosimulation import commands as simulation_commands
 from cr_beamng_cosimulation import analysis_commands as analysis_commands
+
 
 ######## Monkey Patching problematic libraries
 
@@ -525,7 +528,7 @@ def apply_monkey_path():
             msgs.append(f"- {attribute} = {getattr(updated_x_0, attribute) - getattr(planned_x_0, attribute)}")
         msgs.append('\n')
         msgs = "\n".join(msgs)
-        self.msg_logger.critical(f"{msgs}")
+        # self.msg_logger.critical(f"{msgs}")
 
 
 

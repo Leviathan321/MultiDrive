@@ -140,7 +140,7 @@ def apply_mokey_patch_to_beamng():
                 arg_list.append("-no-tcom-debug")
 
             # Force showing the console
-            #arg_list.extend(["-console"])
+            arg_list.extend(["-console"])
             arg_list.extend(("-tcom-listen-ip", listen_ip))
 
             self._start_beamng(extensions, *arg_list, **opts)
@@ -151,7 +151,7 @@ def apply_mokey_patch_to_beamng():
 
         # try to connect to existing instance
         # print(f"Connecting to BeamNG at {self.host}:{self.port}")
-        connected = self.connection.connect_to_beamng(tries=1, log_tries=False)
+        connected = self.connection.connect_to_beamng(tries=3, log_tries=True)
         # print(f"Connected {self.host}:{self.port}")
 
         assert connected, "Cannot connect to BeamNGpy"
@@ -258,8 +258,9 @@ class BeamNGScenarioHandler():
             if sys.platform == "linux":
                 # Note: We need to listen connection from any IP
                 self.beamng.open(listen_ip='0.0.0.0', launch=True)
-                #self.beamng.open("-headless", "-tcom", listen_ip="0.0.0.0", launch=True)
+                #self.beamng.open("-headless", listen_ip="0.0.0.0", launch=True)
                 #self.beamng.open(None, "-headless", "-tcom", listen_ip="0.0.0.0", launch=True)
+                print("In start_simulator_if_not_running (linux)")
             else:
                 self.beamng.open(launch=True)
 
@@ -560,10 +561,10 @@ class BeamNGScenarioHandler():
 
             # Render at the bottom (priority 10)
             # TODO We assume those materials exist.
-            beamng_road = BNG_Road('road_asphalt_light', interpolate=False,
-                                     rid=f"lane_{lanelet.lanelet_id}",
-                                     over_objects=True,
-                                     drivability=-1, render_priority=10)
+            # beamng_road = BNG_Road('road_asphalt_light', interpolate=False,
+            #                          rid=f"lane_{lanelet.lanelet_id}",
+            #                          over_objects=True,
+            #                          drivability=-1, render_priority=10)
 
             # Create also the invisible lane on top of it, this is the actual road the NAVI sees
             # Render at the top (priority 1)
@@ -572,10 +573,10 @@ class BeamNGScenarioHandler():
                                                over_objects=True,
                                                drivability=1, render_priority=1)
 
-            beamng_road.add_nodes(*road_nodes)
+            # beamng_road.add_nodes(*road_nodes)
             invisible_beamng_road.add_nodes(*road_nodes)
 
-            beamng_scenario.add_road(beamng_road)
+            # beamng_scenario.add_road(beamng_road)
             beamng_scenario.add_road(invisible_beamng_road)
 
         # Instantiate the vehicles
@@ -658,7 +659,7 @@ class BeamNGScenarioHandler():
         # Place the general camera on top of the vehicle (TODO Later we need to decide what to do!)
         # Set the user camera relative to the focused vehicle (the only one in the scenario)
         # Set the scenario camera to be birdview over the vehicle
-        self.beamng.camera.set_relative(pos=(0, 0, 30), dir=(0, 0, -1))
+        # self.beamng.camera.set_relative(pos=(0, 0, 30), dir=(0, 0, -1))
 
         #
         # TODO Improve this with a Class or just return self.beamng since all the other variables can be obtained calling its functions

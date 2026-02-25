@@ -1,6 +1,4 @@
 # Extends the original simulation class with the BeamNG methods
-import os
-import subprocess
 import time
 from copy import deepcopy
 
@@ -78,25 +76,8 @@ class BeamNGSimulation(Simulation):
 
         # Store metadata about vechiles, probably this should be already inside beamng_config or some other config!
         self.distance_between_center_and_front_dict = {}
-    
-        self.stop_simulation_flag = False
-        self.ego_standstill_time_s = 0.0
 
         self.show_debug_info = False if not hasattr(config_planner, "debug") else config_planner.debug.show_debug_info
-
-    def _ego_reached_goal(self, ego_state) -> bool:
-        gc = getattr(self.config_simulation, "goal_check", None)
-        if not isinstance(gc, dict):
-            return False
-
-        xg = float(gc["x"])
-        yg = float(gc["y"])
-        thr = float(gc.get("threshold", 1.0))
-
-        px = float(ego_state.position[0])
-        py = float(ego_state.position[1])
-
-        return Point(px, py).distance(Point(xg, yg)) <= thr
 
     def _cosimulate(self, time_step: int):
         #   - BeamNG controller implements the trajectories planned by the agents (if any)
@@ -215,6 +196,7 @@ class BeamNGSimulation(Simulation):
         vehicles_cr_states: Dict[int, CR_State]
         vehicle_damages: Dict[int, bool]
         vehicles_cr_states, vehicle_damages = self.beamng_scenario_handler.get_state_of_beamng_vehicles(time_step, self.bng_scenario)
+
         return vehicles_cr_states, vehicle_damages
        
     def update_scenario(self, vehicles_cr_states: Dict[int, CR_State]):
@@ -295,38 +277,10 @@ class BeamNGSimulation(Simulation):
         # check for collisions
         colliding_agents = [k for k,v in vehicle_damages.items() if v]
 
-        ego_id = int(getattr(self.config_simulation, "ego_id", 3001))
-        ego_state = vehicles_cr_states.get(ego_id, None)
-
-        if ego_id in colliding_agents:
-            self.msg_logger.critical(f"Ego {ego_id} COLLISION at timestep {self.global_timestep} -> stop simulation")
-            self.stop_simulation_flag = True
-
-        if  self._ego_reached_goal(ego_state):
-            self.msg_logger.critical(f"Ego {ego_id} REACHED GOAL at timestep {self.global_timestep} -> stop simulation")
-            self.stop_simulation_flag = True
-
-        V_EPS = 0.02
-        T_STOP = 30.0
-
-        dt = float(getattr(self.scenario, "dt", 0.1))
-        v = float(getattr(ego_state, "velocity", 0.0))
-
-        if abs(v) <= V_EPS:
-            self.ego_standstill_time_s += dt
-        else:
-            self.ego_standstill_time_s = 0.0
-            
         # update scenario. This update the state of all the obstacles, but the agent/agent_batch does not use this info
         # to update its current state!
         self.update_scenario(vehicles_cr_states)
-
-        if self.ego_standstill_time_s >= T_STOP:
-            self.msg_logger.critical(
-                f"Ego {ego_id} STANDSTILL for {self.ego_standstill_time_s:.1f}s (v={v:.2f}) -> stop simulation"
-            )
-            self.stop_simulation_flag = True
-
+        
         # Calculate new predictions
         if ((self.replanning_counter == 0 or self.config_planner.planning.replanning_frequency < 2) or
                 self.config.behavior.use_behavior_planner):
@@ -410,91 +364,34 @@ class BeamNGSimulation(Simulation):
 
         # ALESSIO: This was missing in the original implementation
         self.replanning_counter += 1
-
+        
         return len(self.batch_list) > 0
 
-    def kill_bmng_force(self):
-        # Hard-coded full path to the batch file
-        kill_script = fr"C:\BeamNG.tech.v0.32.5.0\kill_bmng.bat"
-
-        cmd = ["cmd.exe", "/c", kill_script]
-
-        print(f"Running command: {cmd}")
-
+    def run_simulation(self):
+        # Setup the BeamNG simulator and instantiate the CommonRoad scenario into it (causing the creation of BeamNG vehicles)
+        # Wrapper around BeamNG
+        self.beamng_scenario_handler = BeamNGScenarioHandler(self.beamng_config.host, self.beamng_config.port, 
+                                                        self.beamng_config.home_folder, self.beamng_config.user_folder,
+                                                        visualize_debug_spheres=self.show_debug_info)
         try:
-            subprocess.run(cmd, check=True)
-            print("BeamNG killed successfully!")
-        except subprocess.CalledProcessError as e:
-            print(f"Failed to run {kill_script}: {e}")
-            
-    def run_simulation(self, max_retries=1):
-        """
-        Sets up and runs the simulation in BeamNG using the preprocessed CommonRoad scenario.
-        If the simulation fails, it retries up to max_retries times.
-        """
-        attempt = 0
+            # Start the BeamNG simulator
+            self.msg_logger.critical(f"Starting BeamNG")
+            self.beamng_scenario_handler.start_simulator_if_not_running()
 
-        while attempt < max_retries:
-            attempt += 1
-            self.msg_logger.critical(f"Low-level Simulation attempt {attempt}/{max_retries}")
+            # Setup the scenario in BeamNG
+            # Note: At this point, self.scenario and self.planning_problem_set have been preprocessed already
+            # self.config -> config_sim
+            self.bng_scenario = self.beamng_scenario_handler.setup_and_start_scenario_in_beamng(self.scenario, self.planning_problem_set,
+                                                                            self.config.vehicle, self.beamng_config)
+
+            # Run the simulation. This will call methods such as prepare, post_process, and the like that we overwrite here
+            super().run_simulation()
+
+        finally:
             try:
-                # Initialize BeamNG scenario handler
-                self.beamng_scenario_handler = BeamNGScenarioHandler(
-                    self.beamng_config.host,
-                    self.beamng_config.port,
-                    self.beamng_config.home_folder,
-                    self.beamng_config.user_folder,
-                    visualize_debug_spheres=self.show_debug_info
-                )
-
-                # Kill any previous BeamNG instance before starting
-                try:
-                    self.kill_bmng_force()
-                except Exception:
-                    pass
-
-                # Start the BeamNG simulator
-                self.msg_logger.critical("Starting BeamNG")
-                self.beamng_scenario_handler.start_simulator_if_not_running()
-
-                # Setup and start the scenario
-                self.bng_scenario = self.beamng_scenario_handler.setup_and_start_scenario_in_beamng(
-                    self.scenario,
-                    self.planning_problem_set,
-                    self.config.vehicle,
-                    self.beamng_config
-                )
-
-                # Run the simulation
-                super().run_simulation()
-
-                # If simulation succeeds, break the retry loop
-                break
-
-            except Exception as e:
-                self.msg_logger.error(f"Simulation attempt {attempt} failed: {e}")
-                # Kill BeamNG in case it hung
-                try:
-                    self.beamng_scenario_handler.stop_simulator()
-                                     
-                    # close child processes
-                    self.close_processes()
-                except Exception:
-                    pass
-                
-                try:
-                    self.msg_logger.critical("Killing BeamNG for retry")
-                    self.kill_bmng_force()
-                except Exception:
-                    pass
-                time.sleep(1)  # Optional small delay before retry
-
-            finally:
-                try:
-                    self.msg_logger.critical("Killing BeamNG")
-                    self.kill_bmng_force()
-                except Exception:
-                    pass
-
-        else:
-            self.msg_logger.error(f"Simulation failed after {max_retries} attempts.")
+                self.msg_logger.critical(f"Stopping BeamNG")
+                self.beamng_scenario_handler.stop_simulator()
+            except:
+                pass
+            
+        
